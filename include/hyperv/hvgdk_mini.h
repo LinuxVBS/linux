@@ -745,8 +745,8 @@ enum hv_message_type {
 	HVMSG_X64_CPUID_INTERCEPT		= 0x80010002,
 	HVMSG_X64_EXCEPTION_INTERCEPT		= 0x80010003,
 	HVMSG_X64_APIC_EOI			= 0x80010004,
-	HVMSG_X64_LEGACY_FP_ERROR		= 0x80010005,
-	HVMSG_X64_IOMMU_PRQ			= 0x80010006,
+	HVMSG_X64_IOMMU_PRQ			= 0x80010005,
+	HVMSG_X64_REGISTER_INTERCEPT		= 0x80010006,
 	HVMSG_X64_HALT				= 0x80010007,
 	HVMSG_X64_INTERRUPTION_DELIVERABLE	= 0x80010008,
 	HVMSG_X64_SIPI_INTERCEPT		= 0x80010009,
@@ -1013,8 +1013,16 @@ enum hv_register_name {
 	HV_REGISTER_GUEST_CRASH_P4				= 0x00000214,
 	HV_REGISTER_GUEST_CRASH_CTL				= 0x00000215,
 
+	HV_REGISTER_PENDING_EVENT0				= 0x00010004,
+
+	HV_X64_REGISTER_RIP					= 0x00020010,
 	HV_X64_REGISTER_CR0					= 0x00040000,
 	HV_X64_REGISTER_CR4					= 0x00040003,
+	/* X64 Table Registers */
+	HV_X64_REGISTER_LDTR					= 0x00060006,
+	HV_X64_REGISTER_TR					= 0x00060007,
+	HV_X64_REGISTER_IDTR					= 0x00070000,
+	HV_X64_REGISTER_GDTR					= 0x00070001,
         HV_X64_REGISTER_EFER					= 0x00080001,
         HV_X64_REGISTER_APIC_BASE				= 0x00080003,
         HV_X64_REGISTER_SYSENTER_CS				= 0x00080005,
@@ -1214,6 +1222,20 @@ union hv_arm64_pending_synthetic_exception_event {
 		u8 rsvd[3];
 		u32 exception_type;
 		u64 context;
+	} __packed;
+};
+
+union hv_x64_pending_exception_event {
+	u64 as_uint64[2];
+	struct {
+		u32 event_pending : 1;
+		u32 event_type : 3;
+		u32 reserved0 : 4;
+		u32 deliver_error_code : 1;
+		u32 reserved1 : 7;
+		u32 vector : 16;
+		u32 error_code;
+		u64 exception_parameter;
 	} __packed;
 };
 
