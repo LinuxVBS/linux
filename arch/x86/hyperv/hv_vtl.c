@@ -249,7 +249,7 @@ static int hv_vtl_wakeup_secondary_cpu(u32 apicid, unsigned long start_eip, unsi
 	return hv_vtl_bringup_vcpu(vp_index, cpu, start_eip);
 }
 
-int __init hv_vtl_early_init(void)
+int __init hv_vtl_early_init(u8 vtl)
 {
 	machine_ops.emergency_restart = hv_vtl_emergency_restart;
 	machine_ops.restart = hv_vtl_restart;
@@ -262,8 +262,14 @@ int __init hv_vtl_early_init(void)
 		panic("XSAVE has to be disabled as it is not supported by this module.\n"
 			  "Please add 'noxsave' to the kernel command line.\n");
 
+	 /* We should not be here. We do not support VTLs higher than 2 */
+	if (vtl > HV_VTL_MGMT)
+		panic("Booting in unsupported VTL\n");
+
 	real_mode_header = &hv_vtl_real_mode_header;
-	apic_update_callback(wakeup_secondary_cpu_64, hv_vtl_wakeup_secondary_cpu);
+
+	if (vtl == HV_VTL_MGMT)
+		apic_update_callback(wakeup_secondary_cpu_64, hv_vtl_wakeup_secondary_cpu);
 
 	return 0;
 }
