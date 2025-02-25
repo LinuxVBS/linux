@@ -21,4 +21,10 @@ struct heki {
 	struct heki_hypervisor *hypervisor;
 };
 
+/* Callback function called by the table walker. */
+typedef void (*heki_func_t)(phys_addr_t pa, unsigned long addr, unsigned long size,
+			    unsigned long flags);
+
+void heki_walk(unsigned long va, unsigned long va_end, heki_func_t func);
+
 #endif /* _HEKI_COMMON_H */
