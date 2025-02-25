@@ -539,11 +539,12 @@ static int vmap_pages_pte_range(pmd_t *pmd, unsigned long addr,
 			err = -ENOMEM;
 			break;
 		}
+#ifndef CONFIG_HV_SECURE_VTL
 		if (WARN_ON(!pfn_valid(page_to_pfn(page)))) {
 			err = -EINVAL;
 			break;
 		}
-
+#endif
 		set_pte_at(&init_mm, addr, pte, mk_pte(page, prot));
 		(*nr)++;
 	} while (pte++, addr += PAGE_SIZE, addr != end);
