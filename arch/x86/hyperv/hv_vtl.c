@@ -16,8 +16,11 @@
 #include <asm/reboot.h>
 #include <../kernel/smpboot.h>
 
+#define HV_SECURE_VTL_BOOT_TOKEN 0xDC
+
 extern struct boot_params boot_params;
 static struct real_mode_header hv_vtl_real_mode_header;
+static u8 *hv_secure_vtl_boot_signal;
 
 static bool __init hv_vtl_msi_ext_dest_id(void)
 {
@@ -207,6 +210,37 @@ static void hv_vtl_populate_vp_context(struct hv_enable_vp_vtl *input, u32 targe
 	input->vp_context.tr.attributes = 0x8b;
 }
 
+static int hv_vtl1_wakeup_secondary_cpu(u32 apicid, unsigned long start_eip, unsigned int cpu_unused)
+{
+	int cpu;
+
+	/* Find the logical CPU for the APIC ID */
+	for_each_present_cpu(cpu) {
+		if (arch_match_cpu_phys_id(cpu, apicid))
+			break;
+	}
+	if (cpu >= nr_cpu_ids) {
+		pr_err("No valid CPU found: %d with APIC ID %d in VTL1...\n", cpu, apicid);
+		return -EINVAL;
+	}
+
+	WRITE_ONCE(hv_secure_vtl_boot_signal[cpu], HV_SECURE_VTL_BOOT_TOKEN);
+	return 0;
+}
+
+int hv_secure_vtl_init_boot_signal_page(void *shared_data)
+{
+	if (!shared_data)
+		return -EINVAL;
+
+	hv_secure_vtl_boot_signal = (u8 *)shared_data;
+	/* VTL 0 sets the boot signal for cpu 0 and sends the page across. */
+	if (hv_secure_vtl_boot_signal[0] != HV_SECURE_VTL_BOOT_TOKEN)
+		return -EINVAL;
+	else
+		return 0;
+}
+
 static int hv_vtl_bringup_vcpu(u32 target_vp_index, int cpu, u64 eip_ignored)
 {
 	u64 status;
@@ -292,6 +326,9 @@ int __init hv_vtl_early_init(u8 vtl)
 		panic("Booting in unsupported VTL\n");
 
 	real_mode_header = &hv_vtl_real_mode_header;
+
+	if (vtl == HV_VTL_SECURE)
+		apic_update_callback(wakeup_secondary_cpu_64, hv_vtl1_wakeup_secondary_cpu);
 
 	if (vtl == HV_VTL_MGMT)
 		apic_update_callback(wakeup_secondary_cpu_64, hv_vtl_wakeup_secondary_cpu);
