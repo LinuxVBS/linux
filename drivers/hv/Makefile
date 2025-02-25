@@ -18,7 +18,8 @@ mshv_root-y := mshv_root_main.o mshv_synic.o mshv_eventfd.o mshv_irq.o \
 # Code that must be built-in
 obj-$(subst m,y,$(CONFIG_HYPERV)) += hv_common.o
 obj-$(subst m,y,$(CONFIG_MSHV_ROOT)) += hv_proc.o
-ifneq ($(CONFIG_MSHV_ROOT)$(CONFIG_HYPERV_VSM),)
+ifneq ($(CONFIG_MSHV_ROOT)$(CONFIG_HYPERV_VSM)$(CONFIG_HV_SECURE_VTL),)
 	obj-y += mshv_common.o
 endif
 obj-$(subst m,y,$(CONFIG_HYPERV_VSM)) += hv_vsm_securekernel.o hv_vsm_boot.o hv_vsm.o
+obj-$(subst m,y,$(CONFIG_HV_SECURE_VTL)) += mshv_vsm_vtl1.o
