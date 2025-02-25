@@ -14,6 +14,7 @@
 #include <linux/vmalloc.h>
 #include <linux/delay.h>
 #include <linux/interrupt.h>
+#include <linux/heki.h>
 #include <asm/mshyperv.h>
 #include <asm/fpu/api.h>
 #include <asm/cpu.h>
@@ -540,6 +541,49 @@ static int hv_modify_vtl_protection_mask(u64 start_pfn, u64 number_of_pages, u32
 	return hv_result(status);
 }
 
+static int mshv_vsm_protect_memory(u64 pfn, unsigned long nranges)
+{
+	int i, err, ret = 0;
+	struct page *_page;
+	void *page_addr;
+	struct heki_protect_memory *mems, *mem;
+	u64 page_count;
+	u32 perm;
+
+	_page = pfn_to_page(pfn);
+	page_addr = vmap(&_page, 1, VM_MAP, PAGE_KERNEL);
+	if (!page_addr) {
+		pr_err("%s: Could not map shared page", __func__);
+		return -EINVAL;
+	}
+	mems = (struct heki_protect_memory *)page_addr;
+
+	/* Walk the ranges, apply the permissions for each guest page. */
+	for (i = 0; i < nranges; i++) {
+		mem = &mems[i];
+
+		perm = 0;
+		if (mem->perm & HEKI_MEM_ATTR_READ)
+			perm |= (HV_PAGE_READABLE | HV_PAGE_USER_EXECUTABLE);
+		if (mem->perm & HEKI_MEM_ATTR_WRITE)
+			perm |= HV_PAGE_WRITABLE;
+		if (mem->perm & HEKI_MEM_ATTR_EXECUTE)
+			perm |= HV_PAGE_EXECUTABLE;
+
+		page_count = mem->end_pfn - mem->start_pfn;
+		err = hv_modify_vtl_protection_mask(mem->start_pfn, page_count, perm);
+		if (err) {
+			pr_err("%s: failed pfn=0x%lx, npages=%llu, perm=0x%x\n",
+			       __func__, mem->start_pfn, page_count, perm);
+			ret = err;
+		}
+		pr_err("%s: start_pfn=0x%lx, end_pfn=%lx, perm=0x%lx\n",
+		       __func__, mem->start_pfn, mem->end_pfn, mem->perm);
+	}
+	vunmap(page_addr);
+	return ret;
+}
+
 static void __save_vtl0_registers(void)
 {
 	struct hv_vsm_per_cpu *per_cpu = this_cpu_ptr(&vsm_per_cpu);
@@ -876,6 +920,11 @@ static void mshv_vsm_handle_entry(struct hv_vtlcall_param *_vtl_params)
 		pr_debug("%s: VSM_SIGNAL_END_OF_BOOT\n", __func__);
 		vtl0_end_of_boot = true;
 		status = 0;
+		break;
+	case VSM_VTL_CALL_FUNC_ID_PROTECT_MEMORY:
+		pr_debug("%s : VSM_PROTECT_MEMORY\n", __func__);
+		if (!vtl0_end_of_boot)
+			status = mshv_vsm_protect_memory(_vtl_params->a1, _vtl_params->a2);
 		break;
 	default:
 		pr_err("%s: Wrong Command:0x%llx sent into VTL1\n", __func__, _vtl_params->a0);
