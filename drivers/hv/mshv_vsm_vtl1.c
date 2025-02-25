@@ -11,8 +11,11 @@
 #include <linux/kthread.h>
 #include <linux/cpuhotplug.h>
 #include <linux/fs.h>
+#include <linux/vmalloc.h>
 #include <asm/mshyperv.h>
 #include <asm/fpu/api.h>
+#include <asm/cpu.h>
+#include <asm/mpspec.h>
 #include "hv_vsm.h"
 #include "mshv.h"
 
@@ -67,6 +70,7 @@ struct hv_vsm_per_cpu {
 	bool suppress_tick;
 	/* CPU should stay in VTL1 and not exit to VTL0 even if idle is invoked */
 	bool stay_in_vtl1;
+	bool vtl1_enabled;
 };
 
 static DEFINE_PER_CPU(struct hv_vsm_per_cpu, vsm_per_cpu);
@@ -116,6 +120,43 @@ static int hv_vsm_init_code_page_offsets(void)
 	if (!ret)
 		vsm_code_page_offsets.as_uint64 = result;
 
+	return ret;
+}
+
+static int mshv_vsm_enable_aps(void)
+{
+	unsigned int cpu, total_cpus_enabled = 0;
+	struct hv_vsm_per_cpu *per_cpu;
+	int ret = 0;
+
+	/* Loop through present Processors and enable VTL1 in each one */
+	for_each_present_cpu(cpu) {
+		/*
+		 * Skip enabling of VTL1 for boot processor as it is already enabled by
+		 * VTL0 and boot completed
+		 */
+		if (cpu_online(cpu))
+			continue;
+		per_cpu = per_cpu_ptr(&vsm_per_cpu, cpu);
+		if (per_cpu->vtl1_enabled) {
+			pr_info("%s: CPU%u is already enabled for VTL1. Will skip to next CPU",
+				__func__, cpu);
+			continue;
+		}
+
+		ret = hv_secure_vtl_enable_secondary_cpu((u32)cpu);
+
+		if (ret) {
+			pr_err("%s: Failed to enable VTL1 for CPU%u", __func__, cpu);
+			goto out;
+		}
+
+		per_cpu->vtl1_enabled = true;
+		total_cpus_enabled++;
+	}
+
+	pr_info("%s: Enabled %u CPUs", __func__, total_cpus_enabled);
+out:
 	return ret;
 }
 
@@ -258,11 +299,22 @@ out:
 
 static void mshv_vsm_handle_entry(struct hv_vtlcall_param *_vtl_params)
 {
+	int status = -EINVAL;
+
 	switch (_vtl_params->a0) {
+//	case VSM_VTL_CALL_FUNC_ID_ENABLE_APS_VTL:
+//		pr_debug("%s : VSM_VTL_CALL_FUNC_ID_ENABLE_APS_VTL\n", __func__);
+//		status = mshv_vsm_enable_aps(_vtl_params->a1);
+//		break;
 	default:
 		pr_err("%s: Wrong Command:0x%llx sent into VTL1\n", __func__, _vtl_params->a0);
 		break;
 	}
+	if (status < 0)
+		pr_err("%s: func id:0x%llx failed\n", __func__, _vtl_params->a0);
+	else
+		pr_debug("%s: func id:0x%llx is ok\n", __func__, _vtl_params->a0);
+	_vtl_params->a3 = status;
 }
 
 static int mshv_vsm_vtl_task(void *unused)
@@ -425,7 +477,7 @@ static int __init mshv_vtl1_init(void)
 			 __func__);
 		return -EINVAL;
 	}
-
+	mshv_vsm_enable_aps();
 	/* Initialize hyper-v per cpu context */
 	// ToDo: Introduce clean up function
 	ret = cpuhp_setup_state(CPUHP_AP_ONLINE_DYN, "hyperv/vsm:init",
