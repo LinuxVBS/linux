@@ -702,6 +702,8 @@ static int __init hv_vsm_boot_init(void)
 	if (ret)
 		panic("VTL1 boot failure caused kernel panic; consult log for more details.\n");
 
+	hv_vsm_init_heki();
+
 	set_cpus_allowed_ptr(current, mask);
 	free_cpumask_var(mask);
 	return ret;

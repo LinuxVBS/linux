@@ -12,8 +12,11 @@
 #include <linux/types.h>
 
 #define VSM_VTL_CALL_FUNC_ID_BOOT_APS		0x1FFE1
+#define VSM_VTL_CALL_FUNC_ID_LOCK_REGS		0x1FFE2
 
 extern struct resource sk_res;
 extern struct boot_params boot_params;
+
+int __init hv_vsm_init_heki(void);
 
 #endif /* _HV_VSM_H */
