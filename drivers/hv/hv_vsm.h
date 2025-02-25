@@ -13,6 +13,7 @@
 
 #define VSM_VTL_CALL_FUNC_ID_BOOT_APS		0x1FFE1
 #define VSM_VTL_CALL_FUNC_ID_LOCK_REGS		0x1FFE2
+#define VSM_VTL_CALL_FUNC_ID_SIGNAL_END_OF_BOOT	0x1FFE3
 
 extern struct resource sk_res;
 extern struct boot_params boot_params;
