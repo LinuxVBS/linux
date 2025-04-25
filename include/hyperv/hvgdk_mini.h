@@ -299,6 +299,8 @@ union hv_hypervisor_version_info {
 #define HV_ACCESS_STATS					BIT(8)
 #define HV_DEBUGGING					BIT(11)
 #define HV_CPU_MANAGEMENT				BIT(12)
+#define HV_ACCESS_VSM					BIT(16)
+#define HV_ACCESS_VP_REGS				BIT(17)
 #define HV_ENABLE_EXTENDED_HYPERCALLS			BIT(20)
 #define HV_ISOLATION					BIT(22)
 
@@ -433,6 +435,8 @@ union hv_vp_assist_msr_contents {	 /* HV_REGISTER_VP_ASSIST_PAGE */
 #define HVCALL_FLUSH_VIRTUAL_ADDRESS_LIST		0x0003
 #define HVCALL_NOTIFY_LONG_SPIN_WAIT			0x0008
 #define HVCALL_SEND_IPI					0x000b
+#define HVCALL_MODIFY_VTL_PROTECTION_MASK		0x000c
+#define HVCALL_ENABLE_PARTITION_VTL			0x000d
 #define HVCALL_ENABLE_VP_VTL				0x000f
 #define HVCALL_FLUSH_VIRTUAL_ADDRESS_SPACE_EX		0x0013
 #define HVCALL_FLUSH_VIRTUAL_ADDRESS_LIST_EX		0x0014
@@ -866,6 +870,55 @@ struct hv_init_vp_context {
 	u64 msr_cr_pat;
 } __packed;
 
+union hv_enable_partition_vtl_flags {
+	u8 as_uint8;
+	struct {
+		u8 enable_mbec:1;
+		u8 enable_supervisor_shadow_stack:1;
+		u8 enable_hardware_hvpt:1;
+		u8 reserved:5;
+	};
+} __packed;
+
+struct hv_input_enable_partition_vtl {
+	u64					partition_id;
+	union hv_input_vtl			target_vtl;
+	union hv_enable_partition_vtl_flags	flags;
+	u16					rsvd_z16;
+	u32					rsvd_z32;
+} __packed;
+
+union hv_register_vsm_partition_status {
+	u64 as_uint64;
+	struct {
+		u64 enabled_vtl_set : 16;
+		u64 max_vtl : 4;
+		u64 mbec_enabled_vtl_set: 16;
+		u64 supervisor_shadow_stack_enabled_vtl_set : 4;
+		u64 reserved : 24;
+	};
+} __packed;
+
+union hv_register_vsm_vp_status {
+	u64 as_uint64;
+	struct {
+		u64 active_vtl : 4;
+		u64 active_mbec_enabled : 1;
+		u64 reserved_z0 : 11;
+		u64 enabled_vtl_set : 16;
+		u64 reserved_z1 : 32;
+	};
+} __packed;
+
+union hv_register_vsm_code_page_offsets {
+	u64 as_uint64;
+	struct {
+		u64 vtl_call_offset : 12;
+		u64 vtl_return_offset : 12;
+		u64 reserved_z : 40;
+	};
+} __packed;
+
 struct hv_enable_vp_vtl {
 	u64				partition_id;
 	u32				vp_index;
@@ -873,6 +926,25 @@ struct hv_enable_vp_vtl {
 	u8				mbz0;
 	u16				mbz1;
 	struct hv_init_vp_context	vp_context;
+} __packed;
+
+union hv_register_vsm_partition_config {
+	u64 as_u64;
+	struct {
+		u64 enable_vtl_protection : 1;
+		u64 default_vtl_protection_mask : 4;
+		u64 zero_memory_on_reset : 1;
+		u64 deny_lower_vtl_startup : 1;
+		u64 intercept_acceptance : 1;
+		u64 intercept_enable_vtl_protection : 1;
+		u64 intercept_vp_startup : 1;
+		u64 intercept_cpuid_unimplemented : 1;
+		u64 intercept_unrecoverable_exception : 1;
+		u64 intercept_page : 1;
+		u64 intercept_restore_partition_time: 1;
+		u64 intercept_not_present: 1;
+		u64 mbz : 49;
+	};
 } __packed;
 
 struct hv_get_vp_from_apic_id_in {
@@ -1003,7 +1075,11 @@ enum hv_register_name {
 	HV_REGISTER_STIMER0_COUNT				= 0x000B0001,
 
 	/* VSM */
-	HV_REGISTER_VSM_VP_STATUS				= 0x000D0003,
+	HV_REGISTER_VSM_CODE_PAGE_OFFSETS                       = 0x000D0002,
+	HV_REGISTER_VSM_VP_STATUS                               = 0x000D0003,
+	HV_REGISTER_VSM_PARTITION_STATUS                        = 0x000D0004,
+	HV_REGISTER_VSM_PARTITION_CONFIG			= 0x000D0007,
+	HV_REGISTER_VSM_VP_SECURE_CONFIG_VTL0			= 0x000D0010,
 };
 
 /*
