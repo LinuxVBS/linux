@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0
 #include <hyperv/vsm.h>
+#include <hyperv/hvgdk_mini.h>
 #include <asm/mshyperv.h>
 
 #define VSM_PAGE_MASK			(_PAGE_PRESENT | _PAGE_RW)
@@ -15,6 +16,8 @@
 #define VSM_GET_PDP_INDEX(addr)		(((addr) >> VSM_PDP_TABLE_SHIFT) & 0x1FF)
 #define VSM_GET_PD_INDEX(addr)		(((addr) >> VSM_PD_TABLE_SHIFT) & 0x1FF)
 
+static union hv_register_vsm_code_page_offsets vsm_code_page_offsets;
+bool is_code_page_offset_retrieved;
 
 static void __init hv_vsm_fill_pte_tables(phys_addr_t sk_pa, u64 *pde,
 					  int pd_index, int num_pte_tables)
@@ -184,10 +187,109 @@ static void __init hv_vsm_init_cpu(struct hv_init_vp_context *vp_ctx, Elf64_Addr
 	vp_ctx->msr_cr_pat = 0x7040600070406;
 }
 
+static void __init hv_vsm_init_code_page_offsets(void)
+{
+	u64 control = HV_HYPERCALL_REP_COMP_1 | HVCALL_GET_VP_REGISTERS;
+	struct hv_input_get_vp_registers *input;
+	struct hv_output_get_vp_registers *output;
+	unsigned long flags;
+	u64 ret;
+
+	local_irq_save(flags);
+	input = *this_cpu_ptr(hyperv_pcpu_input_arg);
+	output = *this_cpu_ptr(hyperv_pcpu_output_arg);
+
+	memset(input, 0, struct_size(input, names, 1));
+	input->partition_id = HV_PARTITION_ID_SELF;
+	input->vp_index = HV_VP_INDEX_SELF;
+	input->input_vtl.as_uint8 = 0;
+	input->names[0] = HV_REGISTER_VSM_CODE_PAGE_OFFSETS;
+
+	ret = hv_do_hypercall(control, input, output);
+	local_irq_restore(flags);
+	if (hv_result_success(ret))
+		vsm_code_page_offsets.as_uint64 = output->values[0].reg64;
+}
+
+/*
+ * This function expects the upper VTL to preserve all registers except
+ * those used by the VTL calling convention ABI (%rdi, %rsi, %rdx, %r8).
+ *
+ * VTL1 reliance means the Linux x86_64 ABI (%rbx, %r12, %r13, %r14, %r15)
+ * must be restored by the caller during bootstrapping when VTL1 is not
+ * operational.
+ *
+ * The %rcx register must be explicitly preserved as it is clobbered,
+ * causing issues if this function is inlined. %rax is not restored by the
+ * upper VTL (passed via the assist page) but is unused and can be ignored.
+ *
+ * This function preserves the args variable on the stack as it is passed
+ * via a scratch register and clobbered.
+ *
+ * Microsoft Hypervisor preserves %rsp during VTL switches.
+ */
+static void __hv_vsm_vtlcall(struct hv_vtlcall_param *args)
+{
+	register u64 r8 asm("r8");
+	u64 hcall_addr;
+
+	hcall_addr = (u64)((u8 *)hv_hypercall_pg + vsm_code_page_offsets.vtl_call_offset);
+	r8 = args->a3;
+
+	asm volatile
+	(/* Push args to stack as %rcx is not preserved across a VTL call */
+		"pushq %[args]\n"
+	/* Make rcx 0 */
+		"xorl	%%ecx, %%ecx\n"
+	/* VTL call */
+		CALL_NOSPEC
+	/* Restore args from stack */
+		"popq %[args]\n"
+		: "+D"(args->a0), "+S"(args->a1),
+		  "+d"(args->a2), "+r"(r8)
+		: [thunk_target]"a"(hcall_addr), [args]"r"(args)
+	/* See the comment above the function why %rcx if here */
+		: "cc", "memory", "rcx");
+
+	args->a3 = r8;
+}
+
+static void __init __hv_vsm_init_vtlcall(struct hv_vtlcall_param *args)
+{
+	asm volatile("pushq %%rbp\n"
+		     CALL_NOSPEC
+		     "popq %%rbp\n"
+			:
+			: "D" (args), THUNK_TARGET(__hv_vsm_vtlcall)
+			: "cc", "memory", "rbx", "r12", "r13", "r14", "r15");
+}
+
 void __init hv_vsm_arch_init_vp(struct hv_init_vp_context *vp_ctx, Elf64_Addr sk_entry_pa,
 				 phys_addr_t sk_pa)
 {
 	hv_vsm_init_cpu(vp_ctx, sk_entry_pa);
 	hv_vsm_init_gdt(vp_ctx, sk_pa);
 	hv_vsm_init_page_tables(vp_ctx, sk_pa);
+}
+
+int __init hv_vsm_init_vtlcall(struct hv_vtlcall_param *args)
+{
+	unsigned long flags = 0;
+	u64 cr2;
+
+	// Retrieve hypercall page offset for vtlcall just once
+	if (!is_code_page_offset_retrieved) {
+		hv_vsm_init_code_page_offsets();
+		is_code_page_offset_retrieved = true;
+	}
+
+	local_irq_save(flags);
+	kernel_fpu_begin_mask(0);
+	cr2 = native_read_cr2();
+	__hv_vsm_init_vtlcall(args);
+	native_write_cr2(cr2);
+	kernel_fpu_end();
+	local_irq_restore(flags);
+
+	return (int)args->a3;
 }

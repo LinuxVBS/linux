@@ -49,4 +49,11 @@ enum {
 
 #define VSM_PAGES_SIZE          (VSM_PAGES_COUNT << VSM_PAGE_SHIFT)
 
+struct hv_vtlcall_param {
+	u64	a0;
+	u64	a1;
+	u64	a2;
+	u64	a3;
+} __packed;
+
 #endif /* _VSM_H */
