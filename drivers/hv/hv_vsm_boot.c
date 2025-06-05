@@ -26,6 +26,15 @@
 static phys_addr_t vsm_skm_pa;
 static void *vsm_skm_va;
 
+/*
+ * By default, when a processor boots in VTL1, we assume that MBEC (Mode-Based Execution Control)
+ * support is also enabled. MBEC distinguishes between user and kernel memory execution permissions.
+ * After the processor boots in VTL1, we verify whether MBEC is actually enabled. If it is not,
+ * we set a global flag to false. This flag is shared across all processors—if any processor fails
+ * to enable MBEC, the system treats MBEC as disabled.
+ */
+bool hv_vsm_mbec_enabled = true;
+
 static int hv_vsm_get_register(u32 reg_name, u64 *result)
 {
 	struct hv_register_assoc reg = {
@@ -393,6 +402,34 @@ static int hv_vsm_get_partition_status(u16 *enabled_vtl_set, u8 *max_vtl, u16 *m
 	return 0;
 }
 
+static __init int hv_vsm_boot_vtl1(void)
+{
+	struct hv_vtlcall_param args = {0};
+	u16 vp_enabled_vtl_set = 0;
+	u8 active_mbec_enabled = 0;
+	int ret;
+
+	args.a0 = 0;
+	args.a1 = (u64)VSM_VA_FROM_PA(PAGE_AT(vsm_skm_pa, VSM_BOOT_PARAMS_PAGE));
+
+	/*
+	 * Kick start vtl1 boot on primary cpu. There is currently no way to exit
+	 * gracefully if this boot is not successful. In case of a failure, primary cpu
+	 * will not return from vtl1 and system will hang.
+	 */
+	hv_vsm_init_vtlcall(&args);
+
+	ret = hv_vsm_get_vp_status(&vp_enabled_vtl_set, &active_mbec_enabled);
+	if (ret)
+		return ret;
+
+	if (!active_mbec_enabled) {
+		pr_err("Failed to enable MBEC for VP0\n");
+		hv_vsm_mbec_enabled = false;
+	}
+	return 0;
+}
+
 static int __init hv_vsm_bootstrap_vtl(void)
 {
 	u16 partition_enabled_vtl_set = 0, partition_mbec_enabled_vtl_set = 0;
@@ -462,7 +499,9 @@ static int __init hv_vsm_bootstrap_vtl(void)
 			return -EINVAL;
 		}
 	}
-	return 0;
+
+	/* Boot Primary Virtual Processor in VTL1 */
+	return hv_vsm_boot_vtl1();
 }
 
 static void __init hv_vsm_get_sk_mem(void)
