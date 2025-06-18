@@ -342,10 +342,12 @@ void hv_setup_dma_ops(struct device *dev, bool coherent);
 void __init hv_vsm_arch_init_vp(struct hv_init_vp_context *vp_ctx, Elf64_Addr sk_entry_pa,
 			       phys_addr_t sk_pa);
 int __init hv_vsm_init_vtlcall(struct hv_vtlcall_param *args);
+int hv_vsm_vtlcall(struct hv_vtlcall_param *args);
 #else /* CONFIG_HYPERV_VSM */
 static inline void __init hv_vsm_arch_init_vp(struct hv_init_vp_context *vp_ctx,
 					      Elf64_Addr sk_entry_pa, phys_addr_t sk_pa) {}
 static inline int hv_vsm_init_vtlcall(struct hv_vtlcall_param *args) { return 0; }
+static inline int hv_vsm_vtlcall(struct hv_vtlcall_param *args) { return 0; }
 #endif
 #else /* CONFIG_HYPERV */
 static inline void hv_identify_partition_type(void) {}

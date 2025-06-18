@@ -293,3 +293,14 @@ int __init hv_vsm_init_vtlcall(struct hv_vtlcall_param *args)
 
 	return (int)args->a3;
 }
+
+int hv_vsm_vtlcall(struct hv_vtlcall_param *args)
+{
+	unsigned long flags = 0;
+
+	local_irq_save(flags);
+	__hv_vsm_vtlcall(args);
+	local_irq_restore(flags);
+
+	return (int)args->a3;
+}
