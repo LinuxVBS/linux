@@ -11,6 +11,8 @@
 
 #include <linux/types.h>
 
+#define VSM_VTL_CALL_FUNC_ID_BOOT_APS		0x1FFE1
+
 extern struct resource sk_res;
 extern struct boot_params boot_params;
 
