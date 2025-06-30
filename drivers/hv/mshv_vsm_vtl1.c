@@ -92,14 +92,14 @@ struct hv_input_modify_vtl_protection_mask {
 	__aligned(8) u64 gpa_page_list[];
 };
 
-static int hv_vsm_set_register(u32 reg_name, u64 value)
+static int __hv_vsm_set_register(u32 reg_name, u64 value, u8 input_vtl)
 {
 	struct hv_register_assoc reg = {
 		.name = reg_name,
 		.value.reg64 = value,
 	};
 	union hv_input_vtl vtl = {
-		.as_uint8 = 0,
+		.as_uint8 = input_vtl,
 	};
 
 	return hv_call_set_vp_registers(HV_VP_INDEX_SELF,
@@ -107,24 +107,48 @@ static int hv_vsm_set_register(u32 reg_name, u64 value)
 					1, vtl, &reg);
 }
 
-static int hv_vsm_get_register(u32 reg_name, u64 *result)
+static int __hv_vsm_get_register(u32 reg_name, u64 *result, u8 input_vtl)
 {
 	struct hv_register_assoc reg = {
 		.name = reg_name,
 	};
-	union hv_input_vtl input_vtl = {
-		.as_uint8 = 0,
+	union hv_input_vtl vtl = {
+		.as_uint8 = input_vtl,
 	};
 	int ret;
 
 	ret = hv_call_get_vp_registers(HV_VP_INDEX_SELF,
 				       HV_PARTITION_ID_SELF,
-				       1, input_vtl, &reg);
+				       1, vtl, &reg);
 	if (ret)
 		return ret;
 
 	*result = reg.value.reg64;
 	return 0;
+}
+
+static int hv_vsm_get_register(u32 reg_name, u64 *result)
+{
+	return __hv_vsm_get_register(reg_name, result, 0);
+}
+
+static int hv_vsm_set_register(u32 reg_name, u64 value)
+{
+	return __hv_vsm_set_register(reg_name, value, 0);
+}
+
+static int hv_vsm_get_vtl0_register(u32 reg_name, u64 *result)
+{
+	u8 input_vtl = 0x1 << 4;
+
+	return __hv_vsm_get_register(reg_name, result, input_vtl);
+}
+
+static int hv_vsm_set_vtl0_register(u32 reg_name, u64 value)
+{
+	u8 input_vtl = 0x1 << 4;
+
+	return __hv_vsm_set_register(reg_name, value, input_vtl);
 }
 
 static int hv_vsm_init_code_page_offsets(void)
