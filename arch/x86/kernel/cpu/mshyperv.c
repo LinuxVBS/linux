@@ -17,6 +17,7 @@
 #include <linux/irq.h>
 #include <linux/kexec.h>
 #include <linux/random.h>
+#include <linux/heki.h>
 #include <asm/processor.h>
 #include <asm/hypervisor.h>
 #include <hyperv/hvhdk.h>
@@ -288,6 +289,45 @@ static void __init x86_setup_ops_for_tsc_pg_clock(void)
 	old_restore_sched_clock_state = x86_platform.restore_sched_clock_state;
 	x86_platform.restore_sched_clock_state = hv_restore_sched_clock_state;
 }
+
+#ifdef CONFIG_HEKI
+
+int heki_arch_get_kernel_va_range(unsigned long *start, unsigned long *end)
+{
+	*start = GUARD_HOLE_END_ADDR;
+	*end = ~0UL;
+	return 0;
+}
+
+int heki_arch_flags_to_perm(unsigned long pfn, unsigned long addr, unsigned long flags,
+			    unsigned long *perm)
+{
+	/*
+	 * For now keep module loading space as read-write in the hypervisor
+	 * even if parts of the memory is allocated as rox
+	 */
+	if (addr >= MODULES_VADDR && addr < MODULES_END) {
+		*perm = HEKI_MEM_ATTR_READ | HEKI_MEM_ATTR_WRITE;
+		return 0;
+	}
+
+	*perm = HEKI_MEM_ATTR_READ | HEKI_MEM_ATTR_EXECUTE;
+	if (flags & _PAGE_RW)
+		*perm |= HEKI_MEM_ATTR_WRITE;
+	if (flags & _PAGE_NX)
+		*perm &= ~HEKI_MEM_ATTR_EXECUTE;
+	return 0;
+}
+
+bool heki_arch_protect_pfn(unsigned long pfn, unsigned long perm)
+{
+	if (perm & HEKI_MEM_ATTR_WRITE)
+		return false;
+	else
+		return true;
+}
+
+#endif /* CONFIG_HEKI */
 #endif /* CONFIG_HYPERV */
 
 static uint32_t  __init ms_hyperv_platform(void)

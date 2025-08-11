@@ -46,6 +46,16 @@ out:
 	return ret;
 }
 
+static int hv_vsm_protect_memory(unsigned long page_pfn, int entries)
+{
+	struct hv_vtlcall_param args = {0};
+
+	args.a0 = VSM_VTL_CALL_FUNC_ID_PROTECT_MEMORY;
+	args.a1 = page_pfn;
+	args.a2 = entries;
+
+	return hv_vsm_vtlcall(&args);
+}
 static int hv_vsm_signal_end_of_boot(void)
 {
 	struct hv_vtlcall_param args = {0};
@@ -56,6 +66,7 @@ static int hv_vsm_signal_end_of_boot(void)
 
 static struct heki_hypervisor hyperv_heki_hypervisor = {
 	.lock_crs = hv_vsm_lock_crs,
+	.protect_memory = hv_vsm_protect_memory,
 	.finish_boot = hv_vsm_signal_end_of_boot,
 };
 
